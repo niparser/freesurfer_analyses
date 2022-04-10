@@ -1,8 +1,10 @@
+import re
 from pathlib import Path
 from typing import Union
 
-from dmriprep_analyses.utils.data_grabber import DataGrabber
-from dmriprep_analyses.utils.messages import MISSING_DATAGRABBER
+from freesurfer_analyses.data.bids import BIDS_ENTITIES
+from freesurfer_analyses.utils.data_grabber import DataGrabber
+from freesurfer_analyses.utils.messages import MISSING_DATAGRABBER
 
 
 def validate_instantiation(
@@ -57,27 +59,9 @@ def collect_subjects(
 
     if isinstance(participant_labels, str):
         participant_labels = [participant_labels]
-    return {participant_label: instance.data_grabber.subjects.get(participant_label) for participant_label in participant_labels}
-
-
-def apply_bids_filters(original: dict, replacements: dict) -> dict:
-    """
-    Change an *original* bids-filters' query according to *replacements*
-
-    Parameters
-    ----------
-    original : dict
-        Original filters
-    replacements : dict
-        Replacement entities
-
-    Returns
-    -------
-    dict
-        Combined entities for bids query
-    """
-    combined_filters = original.copy()
-    if isinstance(replacements, dict):
-        for key, value in replacements.items():
-            combined_filters[key] = value
-    return combined_filters
+    return {
+        participant_label: instance.data_grabber.subjects.get(
+            participant_label
+        )
+        for participant_label in participant_labels
+    }

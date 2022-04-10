@@ -41,7 +41,9 @@ class NativeRegistration(DmriprepManager):
         super().__init__(base_dir, participant_labels)
         self.parcellation_manager = parcellation_manager()
 
-    def initiate_subject(self, participant_label: str) -> Tuple[dict, Path, Path]:
+    def initiate_subject(
+        self, participant_label: str
+    ) -> Tuple[dict, Path, Path]:
         """
         Query initially-required patricipant's files
 
@@ -125,9 +127,14 @@ class NativeRegistration(DmriprepManager):
         dict
             A dictionary with keys of "whole_brain" and "gm_cropped" native-spaced parcellation schemes.
         """
-        transforms, reference, gm_probseg = self.initiate_subject(participant_label)
+        transforms, reference, gm_probseg = self.initiate_subject(
+            participant_label
+        )
         whole_brain, gm_cropped = [
-            self.build_output_dictionary(parcellation_scheme, reference, "anat").get(key) for key in ["whole_brain", "gm_cropped"]
+            self.build_output_dictionary(
+                parcellation_scheme, reference, "anat"
+            ).get(key)
+            for key in ["whole_brain", "gm_cropped"]
         ]
         self.parcellation_manager.register_parcellation_scheme(
             parcellation_scheme,
@@ -180,16 +187,25 @@ class NativeRegistration(DmriprepManager):
             queries=self.QUERIES,
         )
         if not reference:
-            raise FileNotFoundError(REFERENCE_FILE_MISSING.format(participant_label=participant_label))
+            raise FileNotFoundError(
+                REFERENCE_FILE_MISSING.format(
+                    participant_label=participant_label
+                )
+            )
         whole_brain, gm_cropped = [
-            self.build_output_dictionary(parcellation_scheme, reference, "dwi").get(key) for key in ["whole_brain", "gm_cropped"]
+            self.build_output_dictionary(
+                parcellation_scheme, reference, "dwi"
+            ).get(key)
+            for key in ["whole_brain", "gm_cropped"]
         ]
         for source, target in zip(
             [anatomical_whole_brain, anatomical_gm_cropped],
             [whole_brain, gm_cropped],
         ):
             if not target.exists() or force:
-                img = resample_to_img(str(source), str(reference), interpolation="nearest")
+                img = resample_to_img(
+                    str(source), str(reference), interpolation="nearest"
+                )
                 nib.save(img, target)
 
         return whole_brain, gm_cropped
@@ -225,7 +241,9 @@ class NativeRegistration(DmriprepManager):
             and corresponding natice parcellations as keys.
         """
         outputs = {}
-        anat_whole_brain, anat_gm_cropped = self.register_to_anatomical(parcellation_scheme, participant_label, probseg_threshold, force)
+        anat_whole_brain, anat_gm_cropped = self.register_to_anatomical(
+            parcellation_scheme, participant_label, probseg_threshold, force
+        )
         outputs["anat"] = {
             "whole_brain": anat_whole_brain,
             "gm_cropped": anat_gm_cropped,
@@ -279,7 +297,9 @@ class NativeRegistration(DmriprepManager):
             participant_labels = list(sorted(self.subjects.keys()))
         for participant_label in tqdm(participant_labels):
             try:
-                native_parcellations[participant_label] = self.run_single_subject(
+                native_parcellations[
+                    participant_label
+                ] = self.run_single_subject(
                     parcellation_scheme,
                     participant_label,
                     probseg_threshold=probseg_threshold,
