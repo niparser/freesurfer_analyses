@@ -1,10 +1,16 @@
-import re
+import logging
 from pathlib import Path
 from typing import Union
 
 from freesurfer_analyses.data.bids import BIDS_ENTITIES
 from freesurfer_analyses.utils.data_grabber import DataGrabber
 from freesurfer_analyses.utils.messages import MISSING_DATAGRABBER
+
+LOGGER_CONFIG = dict(
+    filemode="w",
+    format="%(asctime)s - %(message)s",
+    level=logging.INFO,
+)
 
 
 def validate_instantiation(

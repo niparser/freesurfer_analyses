@@ -1,6 +1,8 @@
 """
 Definition of the :class:`NativeRegistration` class.
 """
+import logging
+import subprocess
 from pathlib import Path
 from typing import Tuple
 from typing import Union
@@ -9,29 +11,25 @@ import nibabel as nib
 from brain_parts.parcellation.parcellations import (
     Parcellation as parcellation_manager,
 )
-from nilearn.image.resampling import resample_to_img
 from nipype.interfaces.base import TraitError
 from tqdm import tqdm
 
-from dmriprep_analyses.manager import DmriprepManager
-from dmriprep_analyses.registrations.messages import REFERENCE_FILE_MISSING
-from dmriprep_analyses.registrations.utils import DEFAULT_PARCELLATION_NAMING
-from dmriprep_analyses.registrations.utils import PROBSEG_THRESHOLD
-from dmriprep_analyses.registrations.utils import QUERIES
-from dmriprep_analyses.registrations.utils import TRANSFORMS
+from freesurfer_analyses.manager import FreesurferManager
+from freesurfer_analyses.registrations.utils import CORTEX_MAPPING_CMD
+from freesurfer_analyses.registrations.utils import SUBCORTEX_MAPPING_CMD
 
 
-class NativeRegistration(DmriprepManager):
-    QUERIES = QUERIES
+class NativeRegistration(FreesurferManager):
+    #: Outputs
+    DEFAULT_CORTICAL_OUTPUT_DESTINATION = "label"
+    DEFAULT_CORTICAL_OUTPUT_PATTERN = "{hemi}.{parcellation_scheme}.annot"
 
-    #: Naming
-    DEFAULT_PARCELLATION_NAMING = DEFAULT_PARCELLATION_NAMING
+    DEFAULT_SUBCORTICAL_OUTPUT_DESTINATION = "mri"
+    DEFAULT_SUBCORTICAL_OUTPUT_PATTERN = "{parcellation_scheme}_subcortex.mgz"
 
-    #: Types of transformations
-    TRANSFORMS = TRANSFORMS
-
-    #: Default probability segmentations' threshold
-    PROBSEG_THRESHOLD = PROBSEG_THRESHOLD
+    #: Hemispheres
+    HEMISPHERES_LABELS = ["lh", "rh"]
+    SUBCORTICAL_LABELS = ["subcortex"]
 
     def __init__(
         self,
@@ -41,174 +39,216 @@ class NativeRegistration(DmriprepManager):
         super().__init__(base_dir, participant_labels)
         self.parcellation_manager = parcellation_manager()
 
-    def initiate_subject(
-        self, participant_label: str
-    ) -> Tuple[dict, Path, Path]:
+    def get_participant_label_and_session(
+        self, source_file: str
+    ) -> Tuple[str, str]:
         """
-        Query initially-required patricipant's files
+        Get participant label and session from *source_file*.
 
         Parameters
         ----------
-        participant_label : str
-            Specific participant's label to be queried
+        source_file : str
+            Path to a file.
 
         Returns
         -------
-        Tuple[dict,Path,Path]
-            A tuple of required files for parcellation registration.
+        Tuple[str, str]
+            A tuple of participant label and session.
         """
-        return [
-            grabber(participant_label, queries=self.QUERIES)
-            for grabber in [
-                self.get_transforms,
-                self.get_reference,
-                self.get_probseg,
-            ]
-        ]
+        participant_label, session = Path(source_file).name.split("_")[:2]
+        return participant_label, session
 
     def build_output_dictionary(
         self,
+        source_file: str,
         parcellation_scheme: str,
-        reference: Path,
-        reference_type: str,
+        hemi: str,
     ) -> dict:
         """
-        Based on a *reference* image,
-        reconstruct output names for native parcellation naming.
-
-        Parameters
-        ----------
-        reference : Path
-            The reference image.
-        reference_type : str
-            The reference image type (either "anat" or "dwi")
-
-        Returns
-        -------
-        dict
-            A dictionary with keys of "whole-brain" and "gm-cropped" and their
-            corresponding paths
-        """
-        basic_query = dict(
-            atlas=parcellation_scheme,
-            resolution=reference_type,
-            **self.DEFAULT_PARCELLATION_NAMING.copy(),
-        )
-        outputs = dict()
-        for key, label in zip(["whole_brain", "gm_cropped"], ["", "GM"]):
-            query = basic_query.copy()
-            query["label"] = label
-            outputs[key] = self.data_grabber.build_path(reference, query)
-        return outputs
-
-    def register_to_anatomical(
-        self,
-        parcellation_scheme: str,
-        participant_label: str,
-        probseg_threshold: float = None,
-        force: bool = False,
-    ) -> dict:
-        """
-        Register a *parcellation scheme* from standard to native anatomical space. # noqa
-
-        Parameters
-        ----------
-        parcellation_scheme : str
-            A string representing existing key within *self.parcellation_manager.parcellations*.
-        participant_label : str
-            Specific participant's label
-        probseg_threshold : float, optional
-            Threshold for probability segmentation masking, by default None
-        force : bool, optional
-            Whether to re-write existing files, by default False
-
-        Returns
-        -------
-        dict
-            A dictionary with keys of "whole_brain" and "gm_cropped" native-spaced parcellation schemes.
-        """
-        transforms, reference, gm_probseg = self.initiate_subject(
-            participant_label
-        )
-        whole_brain, gm_cropped = [
-            self.build_output_dictionary(
-                parcellation_scheme, reference, "anat"
-            ).get(key)
-            for key in ["whole_brain", "gm_cropped"]
-        ]
-        self.parcellation_manager.register_parcellation_scheme(
-            parcellation_scheme,
-            participant_label,
-            reference,
-            transforms.get("mni2native"),
-            whole_brain,
-            force=force,
-        )
-        self.parcellation_manager.crop_to_probseg(
-            parcellation_scheme,
-            participant_label,
-            whole_brain,
-            gm_probseg,
-            gm_cropped,
-            masking_threshold=probseg_threshold or self.PROBSEG_THRESHOLD,
-            force=force,
-        )
-        return whole_brain, gm_cropped
-
-    def register_dwi(
-        self,
-        parcellation_scheme: str,
-        participant_label: str,
-        session: str,
-        anatomical_whole_brain: Path,
-        anatomical_gm_cropped: Path,
-        force: bool = False,
-    ):
-        """
-        Resample parcellation scheme from anatomical to DWI space.
+        Build a dictionary with the following structure:
+        {"path":path to the output file, "exists":True/False}
 
         Parameters
         ----------
         parcellation_scheme : str
             A string representing existing key within *self.parcellation_manager.parcellations*. # noqa
-        participant_label : str
-            Specific participant's label
-        anatomical_whole_brain : Path
-            Participant's whole-brain parcellation scheme in anatomical space
-        anatomical_gm_cropped : Path
-            Participant's GM-cropped parcellation scheme in anatomical space
-        force : bool, optional
-            Whether to re-write existing files, by default False
+        source_file : str
+            Path to a file used as source for Freesurfer's pipeline.
+        hemi : str
+            Hemisphere to be parcellated.
+
+        Returns
+        -------
+        dict
+            A dictionary with keys of "path" and "exists" and corresponding values.
         """
-        reference = self.get_reference(
-            participant_label,
-            "dwi",
-            {"session": session},
-            queries=self.QUERIES,
-        )
-        if not reference:
-            raise FileNotFoundError(
-                REFERENCE_FILE_MISSING.format(
-                    participant_label=participant_label
+        if hemi in self.HEMISPHERES_LABELS:
+            output_file = (
+                source_file
+                / self.DEFAULT_CORTICAL_OUTPUT_DESTINATION
+                / self.DEFAULT_CORTICAL_OUTPUT_PATTERN.format(
+                    hemi=hemi, parcellation_scheme=parcellation_scheme
                 )
             )
-        whole_brain, gm_cropped = [
-            self.build_output_dictionary(
-                parcellation_scheme, reference, "dwi"
-            ).get(key)
-            for key in ["whole_brain", "gm_cropped"]
-        ]
-        for source, target in zip(
-            [anatomical_whole_brain, anatomical_gm_cropped],
-            [whole_brain, gm_cropped],
-        ):
-            if not target.exists() or force:
-                img = resample_to_img(
-                    str(source), str(reference), interpolation="nearest"
+        elif hemi.lower() == "subcortex":
+            output_file = (
+                source_file
+                / self.DEFAULT_SUBCORTICAL_OUTPUT_DESTINATION
+                / self.DEFAULT_SUBCORTICAL_OUTPUT_PATTERN.format(
+                    parcellation_scheme=parcellation_scheme
                 )
-                nib.save(img, target)
+            )
 
-        return whole_brain, gm_cropped
+        return {"path": output_file, "exists": output_file.exists()}
+
+    def configure_cortex_mapping_command(
+        self,
+        source_file: Union[str, Path],
+        parcellation_scheme: str,
+        hemi: str,
+    ):
+        """
+        Configure the command for cortex mapping of *parcellation_scheme* to *source_file*'s native space.
+
+        Parameters
+        ----------
+        source_file : Union[str, Path]
+            Path to a file used as source for Freesurfer's pipeline.
+        parcellation_scheme : str
+            A string representing existing key within *self.parcellation_manager.parcellations*. # noqa
+        hemi : str
+            Hemisphere to be parcellated.
+        """
+        hemi_parcellation = self.parcellation_manager.parcellations.get(
+            parcellation_scheme
+        ).get("gcs")
+        if not hemi_parcellation:
+            raise ValueError(
+                f"No {parcellation_scheme} parcellation scheme found for {hemi} hemisphere."
+            )
+        return CORTEX_MAPPING_CMD.format(
+            input_dir=source_file.parent,
+            subject_id=source_file.name,
+            hemi=hemi,
+            parcellation_gcs=hemi_parcellation.format(hemi=hemi),
+            parcellation_scheme=parcellation_scheme,
+        )
+
+    def configure_subcortex_mapping_command(
+        self,
+        source_file: Union[str, Path],
+        parcellation_scheme: str,
+    ):
+        """
+        Configure the command for sub-cortical mapping of *parcellation_scheme* to *source_file*'s native space.
+
+        Parameters
+        ----------
+        source_file : Union[str, Path]
+            Path to a file used as source for Freesurfer's pipeline.
+        parcellation_scheme : str
+            A string representing existing key within *self.parcellation_manager.parcellations*. # noqa
+        """
+        subcortical_parcellation = self.parcellation_manager.parcellations.get(
+            parcellation_scheme
+        ).get("gcs_subcortex")
+        if not subcortical_parcellation:
+            raise ValueError(
+                f"No {parcellation_scheme} parcellation scheme found for the sub-cortex."
+            )
+        return SUBCORTEX_MAPPING_CMD.format(
+            input_dir=source_file.parent,
+            subject_id=source_file.name,
+            parcellation_gca=subcortical_parcellation,
+            parcellation_scheme=parcellation_scheme,
+        )
+
+    def run_single_hemisphere(
+        self,
+        source_file: Union[str, Path],
+        parcellation_scheme: str,
+        hemi: str,
+        force: bool = False,
+    ):
+        """
+        Register *parcellation_scheme* to *source_file*'s native space.
+
+        Parameters
+        ----------
+        parcellation_scheme : str
+            A string representing existing key within *self.parcellation_manager.parcellations*. # noqa
+        source_file : Union[str,Path]
+            Path to a file used as source for Freesurfer's pipeline.
+        hemi : str
+            Hemisphere to be parcellated.
+        force : bool, optional
+            Whether to re-write existing files, by default False
+
+        Returns
+        -------
+        dict
+            A dictionary with keys of "anat" and available or requested sessions,
+            and corresponding natice parcellations as keys.
+        """
+        source_file = Path(source_file)
+        outputs = self.build_output_dictionary(
+            source_file, parcellation_scheme, hemi
+        )
+        if not outputs["exists"] or force:
+            if hemi in self.HEMISPHERES_LABELS:
+                cmd = self.configure_cortex_mapping_command(
+                    source_file, parcellation_scheme, hemi
+                )
+            elif hemi.lower() == "subcortex":
+                cmd = self.configure_subcortex_mapping_command(
+                    source_file, parcellation_scheme
+                )
+            logging.info(f"Running command: {cmd}")
+            out = subprocess.Popen(
+                cmd, shell=True, stdout=subprocess.PIPE
+            ).stdout
+            logging.info(out.read().decode())
+        return outputs
+
+    def run_single_source(
+        self,
+        source_file: Union[str, Path],
+        parcellation_scheme: str,
+        hemi: str = None,
+        run_subcortex: bool = True,
+        force: str = False,
+    ):
+        """
+        Register *parcellation_scheme* to *source_file*'s native space.
+
+        Parameters
+        ----------
+        parcellation_scheme : str
+            A string representing existing key within *self.parcellation_manager.parcellations*. # noqa
+        source_file : Union[str,Path]
+            Path to a file used as source for Freesurfer's pipeline.
+        hemi : str, optional
+            Hemisphere to be parcellated, by default None
+
+        Returns
+        -------
+        dict
+            A dictionary with keys of "anat" and available or requested sessions,
+            and corresponding natice parcellations as keys.
+        """
+        logging.info(
+            f"Registering {parcellation_scheme} to {source_file}'s native space."
+        )
+        outputs = {}
+        hemispheres = hemi or self.HEMISPHERES_LABELS + self.SUBCORTICAL_LABELS
+        if isinstance(hemispheres, str):
+            hemispheres = [hemispheres]
+        for hemi in hemispheres:
+            logging.info("Registering {} hemisphere.".format(hemi))
+            outputs[hemi] = self.run_single_hemisphere(
+                source_file, parcellation_scheme, hemi, force
+            )
+        return outputs
 
     def run_single_subject(
         self,
@@ -241,29 +281,12 @@ class NativeRegistration(DmriprepManager):
             and corresponding natice parcellations as keys.
         """
         outputs = {}
-        anat_whole_brain, anat_gm_cropped = self.register_to_anatomical(
-            parcellation_scheme, participant_label, probseg_threshold, force
-        )
-        outputs["anat"] = {
-            "whole_brain": anat_whole_brain,
-            "gm_cropped": anat_gm_cropped,
-        }
         sessions = self.subjects.get(participant_label) or session
         if isinstance(sessions, str):
             sessions = [sessions]
         for session in sessions:
-            whole_brain, gm_cropped = self.register_dwi(
-                parcellation_scheme,
-                participant_label,
-                session,
-                anat_whole_brain,
-                anat_gm_cropped,
-                force,
-            )
-            outputs[session] = {
-                "whole_brain": whole_brain,
-                "gm_cropped": gm_cropped,
-            }
+            source_file = self.subjects.get(session)
+
         return outputs
 
     def run_dataset(

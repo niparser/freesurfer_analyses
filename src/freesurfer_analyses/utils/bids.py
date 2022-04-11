@@ -24,7 +24,7 @@ def apply_bids_filters(
     list
         List of paths to files that match the filters
     """
-    source_data = [i for i in Path(base_dir).glob("*")]
+    source_data = [i for i in Path(base_dir).glob("anat/*")]
     anatomical_filters = bids_filters.get("anat")
     if not anatomical_filters:
         return source_data
