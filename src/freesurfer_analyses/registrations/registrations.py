@@ -255,7 +255,8 @@ class NativeRegistration(FreesurferManager):
         parcellation_scheme: str,
         participant_label: str,
         session: Union[str, list] = None,
-        probseg_threshold: float = None,
+        hemi: str = None,
+        run_subcortex: bool = True,
         force: bool = False,
     ) -> dict:
         """
@@ -285,31 +286,26 @@ class NativeRegistration(FreesurferManager):
         if isinstance(sessions, str):
             sessions = [sessions]
         for session in sessions:
-            source_file = self.subjects.get(session)
-
+            outputs[session] = {}
+            source_files = self.subjects.get(participant_label).get(session)
+            for source_file in source_files:
+                outputs[session][source_file.name] = self.run_single_source(
+                    source_file,
+                    parcellation_scheme,
+                    hemi=hemi,
+                    run_subcortex=run_subcortex,
+                    force=force,
+                )
         return outputs
 
     def run_dataset(
         self,
         parcellation_scheme: str,
         participant_label: Union[str, list] = None,
-        probseg_threshold: float = None,
+        hemi: str = None,
+        run_subcortex: bool = True,
         force: bool = False,
     ):
-        """
-        Register *parcellation_scheme* to all available (or requested) subjects' native space.
-
-        Parameters
-        ----------
-        parcellation_scheme : str
-            A string representing existing key within *self.parcellation_manager.parcellations*. # noqa
-        participant_label : Union[str, list], optional
-            Specific subject/s within the dataset to run, by default None
-        probseg_threshold : float, optional
-            Threshold for probability segmentation masking, by default None
-        force : bool, optional
-            Whether to remove existing products and generate new ones, by default False # noqa
-        """
         native_parcellations = {}
         if participant_label:
             if isinstance(participant_label, str):
@@ -319,15 +315,11 @@ class NativeRegistration(FreesurferManager):
         else:
             participant_labels = list(sorted(self.subjects.keys()))
         for participant_label in tqdm(participant_labels):
-            try:
-                native_parcellations[
-                    participant_label
-                ] = self.run_single_subject(
-                    parcellation_scheme,
-                    participant_label,
-                    probseg_threshold=probseg_threshold,
-                    force=force,
-                )
-            except (FileNotFoundError, TraitError):
-                continue
+            native_parcellations[participant_label] = self.run_single_subject(
+                parcellation_scheme,
+                participant_label,
+                hemi=hemi,
+                run_subcortex=run_subcortex,
+                force=force,
+            )
         return native_parcellations
