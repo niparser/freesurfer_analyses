@@ -1,7 +1,9 @@
 """
 Definition of the :class:`NativeParcellation` class.
 """
+import logging
 import os
+import subprocess
 
 # import warnings
 from pathlib import Path
@@ -13,11 +15,15 @@ import pandas as pd
 from tqdm import tqdm
 
 from freesurfer_analyses.manager import FreesurferManager
+from freesurfer_analyses.parcellations.utils import CORTICAL_STATS_TO_TABLE_CMD
 from freesurfer_analyses.parcellations.utils import (
     PARCELLATION_CORTICAL_STATISTICS_CMD,
 )
 from freesurfer_analyses.parcellations.utils import (
     PARCELLATION_SUBCORTICAL_STATISTICS_CMD,
+)
+from freesurfer_analyses.parcellations.utils import (
+    SUBCORTICAL_STATS_TO_TABLE_CMD,
 )
 
 # from freesurfer_analyses.parcellations.utils import PARCALLATION_STATISTICS_CMD # noqa
@@ -31,6 +37,31 @@ class NativeParcellation(FreesurferManager):
 
     DEFAULT_SUBCORTICAL_STATS_DESTINATION = "stats"
     DEFAULT_SUBCORTICAL_STATS_PATTERN = "{parcellation_scheme}_subcortex.stats"
+
+    #: Table outputs
+    DEFAULT_CORTICAL_TABLES_DESTINATION = "stats"
+    DEFAULT_CORTICAL_TABLES_PATTERN = (
+        "{hemi}_{measure}.{parcellation_scheme}.csv"
+    )
+
+    DEFAULT_SUBCORTICAL_TABLES_DESTINATION = "stats"
+    DEFAULT_SUBCORTICAL_TABLES_PATTERN = (
+        "{parcellation_scheme}_subcortex_{measure}.csv"
+    )
+    #: Measures
+    CORTICAL_MEASURES = [
+        'area',
+        'volume',
+        'thickness',
+        'thicknessstd',
+        'thickness.T1',
+        'meancurv',
+        'gauscurv',
+        'foldind',
+        'curvind',
+    ]
+
+    SUBCORTICAL_MEASURES = ["volume", "std", "mean"]
 
     def __init__(
         self,
@@ -125,6 +156,54 @@ class NativeParcellation(FreesurferManager):
 
         return {"path": output_file, "exists": output_file.exists()}
 
+    def build_table_output_dictionary(
+        self,
+        source_file: str,
+        parcellation_scheme: str,
+        hemi: str,
+        measure: str,
+    ) -> dict:
+        """
+        Build a dictionary with the following structure:
+        {"path":path to the output file, "exists":True/False}
+
+        Parameters
+        ----------
+        parcellation_scheme : str
+            A string representing existing key within *self.parcellation_manager.parcellations*. # noqa
+        source_file : str
+            Path to a file used as source for Freesurfer's pipeline.
+        hemi : str
+            Hemisphere to be parcellated.
+
+        Returns
+        -------
+        dict
+            A dictionary with keys of "path" and "exists" and corresponding values.
+        """
+        self.validate_measure(hemi, measure)
+        source_file = Path(source_file)
+        if hemi in self.HEMISPHERES_LABELS:
+            output_file = (
+                source_file
+                / self.DEFAULT_CORTICAL_TABLES_DESTINATION
+                / self.DEFAULT_CORTICAL_TABLES_PATTERN.format(
+                    hemi=hemi,
+                    parcellation_scheme=parcellation_scheme,
+                    measure=measure,
+                )
+            )
+        elif hemi.lower() == "subcortex":
+            output_file = (
+                source_file
+                / self.DEFAULT_SUBCORTICAL_TABLES_DESTINATION
+                / self.DEFAULT_SUBCORTICAL_TABLES_PATTERN.format(
+                    parcellation_scheme=parcellation_scheme, measure=measure
+                )
+            )
+
+        return {"path": output_file, "exists": output_file.exists()}
+
     def validate_parcellation(
         self, parcellation_scheme: str, key: str
     ) -> Path:
@@ -191,7 +270,75 @@ class NativeParcellation(FreesurferManager):
             hemi=hemi,
             parcellation_scheme=parcellation_scheme,
             lut=parcellation_lut,
-        )
+        ).replace("\n", " ")
+
+    def configure_cortex_transformation_command(
+        self,
+        source_file: Union[str, Path],
+        parcellation_scheme: str,
+        measure: str,
+        hemi: str,
+    ) -> str:
+        """
+        Configure the command for transformation of cortical parcellation
+        (stored as .stats file) to a .csv table.
+
+        Parameters
+        ----------
+        source_file : Union[str,Path]
+            Path to a file used as source for Freesurfer's pipeline.
+        parcellation_scheme : str
+            Parcellation scheme to parcellate by
+        hemi : str
+            Hemisphere to be parcellated.
+
+        Returns
+        -------
+        str
+            A string representing the command to be executed.
+        """
+        source_file = Path(source_file)
+        return CORTICAL_STATS_TO_TABLE_CMD.format(
+            input_dir=source_file.parent,
+            subject_id=source_file.name,
+            hemi=hemi,
+            parcellation_scheme=parcellation_scheme,
+            measure=measure,
+        ).replace("\n", " ")
+
+    def configure_subcortical_transformation_command(
+        self,
+        source_file: Union[str, Path],
+        parcellation_scheme: str,
+        measure: str,
+        stats_file: Union[str, Path],
+    ) -> str:
+        """
+        Configure the command for transformation of cortical parcellation
+        (stored as .stats file) to a .csv table.
+
+        Parameters
+        ----------
+        source_file : Union[str,Path]
+            Path to a file used as source for Freesurfer's pipeline.
+        parcellation_scheme : str
+            Parcellation scheme to parcellate by
+        hemi : str
+            Hemisphere to be parcellated.
+
+        Returns
+        -------
+        str
+            A string representing the command to be executed.
+        """
+        source_file = Path(source_file)
+        return SUBCORTICAL_STATS_TO_TABLE_CMD.format(
+            subcortex_stats=stats_file,
+            input_dir=source_file.parent,
+            subject_id=source_file.name,
+            parcellation_scheme=parcellation_scheme,
+            measure=measure,
+        ).replace("\n", " ")
 
     def configure_subcortex_parcellation_command(
         self,
@@ -225,142 +372,232 @@ class NativeParcellation(FreesurferManager):
             subject_id=source_file.name,
             parcellation_scheme=parcellation_scheme,
             gca=parcellation_lut,
-        )
+        ).replace("\n", " ")
 
-    def parcellate_single_tensor(
+    def parcellate_single_hemisphere(
         self,
+        source_file: Union[str, Path],
         parcellation_scheme: str,
-        tensor_type: str,
-        participant_label: str,
-        parcellation_type: str = "whole_brain",
-        session: Union[str, list] = None,
-        measure: Callable = np.nanmean,
+        hemi: str,
         force: bool = False,
-    ) -> pd.DataFrame:
+    ):
         """
-        Parcellate tensor-derived metrics
+        Register *parcellation_scheme* to *source_file*'s native space.
 
         Parameters
         ----------
         parcellation_scheme : str
-            Parcellation scheme to parcellate by
-        tensor_type : str
-            Tensor reconstruction method
-        participant_label : str
-            Specific participant's label
-        parcellation_type : str, optional
-            Either "gm_cropped" or "whole_brain", by default "gm_cropped"
-        session : Union[str, list], optional
-            Specific session's label, by default None
-        measure : Callable, optional
-            Measure for parcellation, by default np.nanmean
+            A string representing existing key within *self.parcellation_manager.parcellations*. # noqa
+        source_file : Union[str,Path]
+            Path to a file used as source for Freesurfer's pipeline.
+        hemi : str
+            Hemisphere to be parcellated.
         force : bool, optional
             Whether to re-write existing files, by default False
 
         Returns
         -------
-        pd.DataFrame
-            A DataFrame with (participant_label,session,tensor_type,metrics)
-            as index and (parcellation_scheme,label) as columns
+        dict
+            A dictionary with keys of "anat" and available or requested sessions,
+            and corresponding natice parcellations as keys.
         """
-        sessions = self.validate_session(participant_label, session)
-        tensors = self.tensor_estimation.run_single_subject(
-            participant_label, session, tensor_type
+        source_file = Path(source_file)
+        outputs = self.build_stats_output_dictionary(
+            source_file, parcellation_scheme, hemi
         )
-        parcellation_images = self.registration_manager.run_single_subject(
-            parcellation_scheme,
-            participant_label,
-            participant_label,
-            session,
-            force=force,
-        )
-        subject_rows = self.generate_rows(
-            participant_label, sessions, tensor_type
-        )
-        subject_data = pd.DataFrame(index=subject_rows)
-        for session in sessions:
-            rows = self.generate_rows(participant_label, session, tensor_type)
-            data = pd.DataFrame(index=rows)
-            parcellation = parcellation_images.get(session).get(
-                parcellation_type
-            )
-            output_file = self.build_output_name(
-                parcellation_scheme,
-                parcellation_type,
-                tensor_type,
-                parcellation,
-                measure,
-            )
-            if output_file.exists() and not force:
-                data = pd.read_pickle(output_file)
-                subject_data = pd.concat([subject_data, data])
-            for metric, metric_image in (
-                tensors.get(session).get(tensor_type)[0].items()
-            ):
-                key = metric.split("_")[-1]
-
-                tmp_data = self.parcellation_manager.parcellate_image(
-                    parcellation_scheme,
-                    parcellation,
-                    metric_image,
-                    key,
-                    measure=measure,
+        if not outputs["exists"] or force:
+            self.set_subjects_dir(source_file.parent)
+            if hemi in self.HEMISPHERES_LABELS:
+                cmd = self.configure_cortex_parcellation_command(
+                    source_file, parcellation_scheme, hemi
                 )
-                data.loc[
-                    (participant_label, session, key),
-                    tmp_data.index,
-                ] = tmp_data.loc[tmp_data.index]
-            data.to_pickle(output_file)
-            subject_data = pd.concat([subject_data, data])
-        return subject_data
+            elif hemi.lower() == "subcortex":
+                cmd = self.configure_subcortex_parcellation_command(
+                    source_file, parcellation_scheme
+                )
+            logging.info(f"Running command: {cmd}")
+            out = subprocess.Popen(
+                cmd, shell=True, stdout=subprocess.PIPE
+            ).stdout
+            logging.info(out.read().decode())
+        return outputs
 
-    def parcellate_single_subject(
+    def parcellate_single_source(
         self,
+        source_file: Union[str, Path],
         parcellation_scheme: str,
-        participant_label: str,
-        parcellation_type: str = "whole_brain",
-        session: Union[str, list] = None,
-        measure: Callable = np.nanmean,
-        force: bool = False,
-    ) -> pd.DataFrame:
+        hemi: Union[str, list] = None,
+        force: str = False,
+    ):
         """
-        Perform all parcellation available for a single subject
+        Register *parcellation_scheme* to *source_file*'s native space.
 
         Parameters
         ----------
         parcellation_scheme : str
-            Parcellation scheme to parcellate by
-        participant_label : str
-            A single participant's label
-        parcellation_type : str, optional
-            Either "whole_brain" or "gm_cropped", by default "whole_brain"
-        session : Union[str, list], optional
-            A specific session's label, by default None
-        measure : Callable, optional
-            Measure to parcellate by, by default np.nanmean
+            A string representing existing key within *self.parcellation_manager.parcellations*. # noqa
+        source_file : Union[str,Path]
+            Path to a file used as source for Freesurfer's pipeline.
+        hemi : Union[str, list], optional
+            Hemisphere to be parcellated, by default None
+
+        Returns
+        -------
+        dict
+            A dictionary with keys of "anat" and available or requested sessions,
+            and corresponding natice parcellations as keys.
+        """
+        logging.info(
+            f"""Parcellating {parcellation_scheme}
+            in {source_file}'s native space."""
+        )
+        outputs = {}
+        hemispheres = hemi or self.HEMISPHERES_LABELS + self.SUBCORTICAL_LABELS
+        if isinstance(hemispheres, str):
+            hemispheres = [hemispheres]
+        for hemi in hemispheres:
+            logging.info("Parcellating {}.".format(hemi))
+            outputs[hemi] = self.parcellate_single_hemisphere(
+                source_file, parcellation_scheme, hemi, force
+            )
+        return outputs
+
+    def validate_measure(self, hemi: str, measure: str) -> None:
+        """
+        Validate the requested measure.
+
+        Parameters
+        ----------
+        hemi : str
+            Hemisphere to be parcellated.
+        measure : str
+            Measure to be parcellated.
+
+        Raises
+        ------
+        ValueError
+            If *measure* is not a valid measure for *hemi*.
+        """
+        if (
+            hemi in self.HEMISPHERES_LABELS
+            and measure not in self.CORTICAL_MEASURES
+        ):
+            raise ValueError(
+                "Cannot run cortical statistics on {}".format(measure)
+            )
+        if (
+            hemi in self.SUBCORTICAL_LABELS
+            and measure not in self.SUBCORTICAL_MEASURES
+        ):
+            raise ValueError(
+                "Cannot run subcortical statistics on {}".format(measure)
+            )
+
+    def run_single_hemisphere(
+        self,
+        source_file: Union[str, Path],
+        parcellation_scheme: str,
+        hemi: str,
+        measure: str,
+        force: bool = False,
+    ):
+        """
+        Parcellate *source_file*'s native space by *parcellation_scheme*,
+        and transform the resulting .stats file into a .csv one.
+
+        Parameters
+        ----------
+        source_file : Union[str, Path]
+            Path to a file used as source for Freesurfer's pipeline.
+        parcellation_scheme : str
+            A string representing existing key within *self.parcellation_manager.parcellations*. # noqa
+        hemi : str
+            Hemisphere to be parcellated.
         force : bool, optional
             Whether to re-write existing files, by default False
 
         Returns
         -------
         pd.DataFrame
-            All subject's availble parcellated data
+            _description_
         """
-        data = pd.DataFrame()
-        for tensor_type in self.tensor_estimation.TENSOR_TYPES:
-            # try:
-            tensor_data = self.parcellate_single_tensor(
-                parcellation_scheme,
-                tensor_type,
-                participant_label,
-                parcellation_type,
-                session,
-                measure,
-                force,
-            )
-            tensor_data = pd.concat([tensor_data], keys=[tensor_type])
-            data = pd.concat([data, tensor_data])
-        return data
+        source_file = Path(source_file)
+        parcellation_outputs = self.parcellate_single_hemisphere(
+            source_file, parcellation_scheme, hemi, force
+        )
+        outputs = self.build_table_output_dictionary(
+            source_file, parcellation_scheme, hemi, measure
+        )
+        if not outputs["exists"] or force:
+            self.set_subjects_dir(source_file.parent)
+            if hemi in self.HEMISPHERES_LABELS:
+                cmd = self.configure_cortex_transformation_command(
+                    source_file, parcellation_scheme, measure, hemi
+                )
+            elif hemi.lower() == "subcortex":
+                cmd = self.configure_subcortical_transformation_command(
+                    source_file,
+                    parcellation_scheme,
+                    measure,
+                    parcellation_outputs.get("path"),
+                )
+            logging.info(f"Running command: {cmd}")
+            out = subprocess.Popen(
+                cmd, shell=True, stdout=subprocess.PIPE
+            ).stdout
+            logging.info(out.read().decode())
+        return outputs
+
+    def run_single_source(
+        self,
+        source_file: Union[Path, str],
+        parcellation_scheme: str,
+        hemi: Union[str, list] = None,
+        measures: Union[str, list] = None,
+        force: str = False,
+    ) -> dict:
+        """
+        Parcellate *source_file*'s native space by *parcellation_scheme*,
+
+        Parameters
+        ----------
+        source_file : Union[Path, str]
+            Path to a file used as source for Freesurfer's pipeline.
+        parcellation_scheme : str
+            A string representing existing key within *self.parcellation_manager.parcellations*. # noqa
+        hemi : Union[str, list], optional
+            Hemisphere to be parcellated, by default None
+        measures : Union[str, list], optional
+            Measure to be parcellated, by default None
+        force : str, optional
+            Whether to re-write existing files, by default False
+
+        Returns
+        -------
+        dict
+            A dictionary with keys of hemispheres and available or requested measures,
+        """
+        logging.info(
+            f"""Parcellating {parcellation_scheme}
+            to {source_file}'s native space."""
+        )
+        outputs = {}
+        hemispheres = hemi or self.HEMISPHERES_LABELS + self.SUBCORTICAL_LABELS
+        if isinstance(hemispheres, str):
+            hemispheres = [hemispheres]
+        for hemi in hemispheres:
+            outputs[hemi] = {}
+            logging.info("Parcellating {}.".format(hemi))
+            if hemi in self.HEMISPHERES_LABELS:
+                hemi_measures = measures or self.CORTICAL_MEASURES
+            elif hemi.lower() == "subcortex":
+                hemi_measures = measures or self.SUBCORTICAL_MEASURES
+            for measure in hemi_measures:
+                self.validate_measure(hemi, measure)
+                outputs[hemi][measure] = self.run_single_hemisphere(
+                    source_file, parcellation_scheme, hemi, measure, force
+                )
+        return outputs
 
     def parcellate_dataset(
         self,
