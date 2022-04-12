@@ -81,3 +81,29 @@ class FreesurferManager:
         else:
             sessions = self.subjects.get(participant_label)
         return sessions
+
+    def build_output_dictionary(
+        self,
+        source_file: Union[str, Path],
+        parcellation_scheme: str,
+        hemi: str,
+    ) -> dict:
+        """
+        Build a dictionary with the following structure:
+        {"path":path to the output file, "exists":True/False}
+
+        Parameters
+        ----------
+        parcellation_scheme : str
+            A string representing existing key within *self.parcellation_manager.parcellations*. # noqa
+        source_file : str
+            Path to a file used as source for Freesurfer's pipeline.
+        hemi : str
+            Hemisphere to be parcellated.
+
+        Returns
+        -------
+        dict
+            A dictionary with keys of "path" and "exists" and corresponding values.
+        """
+        pass

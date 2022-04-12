@@ -13,18 +13,24 @@ import pandas as pd
 from tqdm import tqdm
 
 from freesurfer_analyses.manager import FreesurferManager
+from freesurfer_analyses.parcellations.utils import (
+    PARCELLATION_CORTICAL_STATISTICS_CMD,
+)
+from freesurfer_analyses.parcellations.utils import (
+    PARCELLATION_SUBCORTICAL_STATISTICS_CMD,
+)
 
 # from freesurfer_analyses.parcellations.utils import PARCALLATION_STATISTICS_CMD # noqa
 from freesurfer_analyses.registrations.registrations import NativeRegistration
 
 
 class NativeParcellation(FreesurferManager):
-    #: Outputs
-    DEFAULT_CORTICAL_OUTPUT_DESTINATION = "stats"
-    DEFAULT_CORTICAL_OUTPUT_PATTERN = "{hemi}.{parcellation_scheme}.stats"
+    #: Stats outputs
+    DEFAULT_CORTICAL_STATS_DESTINATION = "stats"
+    DEFAULT_CORTICAL_STATS_PATTERN = "{hemi}.{parcellation_scheme}.stats"
 
-    DEFAULT_SUBCORTICAL_OUTPUT_DESTINATION = "mri"
-    DEFAULT_SUBCORTICAL_OUTPUT_PATTERN = "{parcellation_scheme}_subcortex.mgz"
+    DEFAULT_SUBCORTICAL_STATS_DESTINATION = "stats"
+    DEFAULT_SUBCORTICAL_STATS_PATTERN = "{parcellation_scheme}_subcortex.stats"
 
     def __init__(
         self,
@@ -75,49 +81,151 @@ class NativeParcellation(FreesurferManager):
             [[participant_label], sessions, metrics]
         )
 
-    def build_output_name(
+    def build_stats_output_dictionary(
         self,
+        source_file: str,
         parcellation_scheme: str,
-        parcellation_type: str,
-        tensor_type: str,
-        parcellation_image: Union[Path, str],
-        measure: Callable = np.nanmean,
-    ) -> Path:
+        hemi: str,
+    ) -> dict:
         """
-        Reconstruct output "table"'s path
+        Build a dictionary with the following structure:
+        {"path":path to the output file, "exists":True/False}
 
         Parameters
         ----------
         parcellation_scheme : str
-            Parcellation scheme to parcellate by
-        parcellation_type : str
-            Either "Whole_brain" or "gm_cropped"
-        tensor_type : str
-            Tensor reconstruction method
-        parcellation_image : Union[Path, str]
-            Subject-specific parcellation image
-        measure : Callable, optional
-            Measure to parcellate by, by default np.nanmean
+            A string representing existing key within *self.parcellation_manager.parcellations*. # noqa
+        source_file : str
+            Path to a file used as source for Freesurfer's pipeline.
+        hemi : str
+            Hemisphere to be parcellated.
+
+        Returns
+        -------
+        dict
+            A dictionary with keys of "path" and "exists" and corresponding values.
+        """
+        source_file = Path(source_file)
+        if hemi in self.HEMISPHERES_LABELS:
+            output_file = (
+                source_file
+                / self.DEFAULT_CORTICAL_STATS_DESTINATION
+                / self.DEFAULT_CORTICAL_STATS_PATTERN.format(
+                    hemi=hemi, parcellation_scheme=parcellation_scheme
+                )
+            )
+        elif hemi.lower() == "subcortex":
+            output_file = (
+                source_file
+                / self.DEFAULT_SUBCORTICAL_STATS_DESTINATION
+                / self.DEFAULT_SUBCORTICAL_STATS_PATTERN.format(
+                    parcellation_scheme=parcellation_scheme
+                )
+            )
+
+        return {"path": output_file, "exists": output_file.exists()}
+
+    def validate_parcellation(
+        self, parcellation_scheme: str, key: str
+    ) -> Path:
+        """
+        Validate that *parcellation scheme* has a valid *key*.
+
+        Parameters
+        ----------
+        parcellation_scheme : str
+            Parcellation scheme to be validated.
+        key : str
+            Key to be validated.
 
         Returns
         -------
         Path
-            Path to output table.
+            Path to the parcellation scheme.
+
+        Raises
+        ------
+        ValueError
+            If *parcellation scheme* has no *key*.
         """
-        measure = measure.__name__
-        acquisition = self.tensor_estimation.TENSOR_TYPES.get(tensor_type).get(
-            "acq"
+        parcellation_key = self.parcellation_manager.parcellations.get(
+            parcellation_scheme
+        ).get(key)
+        if not parcellation_key:
+            raise ValueError(
+                f"No available {key} was found for {parcellation_scheme}."
+            )
+        return Path(parcellation_key)
+
+    def configure_cortex_parcellation_command(
+        self,
+        source_file: Union[str, Path],
+        parcellation_scheme: str,
+        hemi: str,
+    ) -> str:
+        """
+        Configure the command for cortex parcellation of *parcellation_scheme*
+        in *source_file*'s native space.
+
+        Parameters
+        ----------
+        source_file : Union[str,Path]
+            Path to a file used as source for Freesurfer's pipeline.
+        parcellation_scheme : str
+            Parcellation scheme to parcellate by
+        hemi : str
+            Hemisphere to be parcellated.
+
+        Returns
+        -------
+        str
+            A string representing the command to be executed.
+        """
+        source_file = Path(source_file)
+        parcellation_lut = self.validate_parcellation(
+            parcellation_scheme, "ctab"
         )
-        entities = {
-            "atlas": parcellation_scheme,
-            "suffix": "dseg",
-            "acquisition": acquisition,
-            "extension": ".pickle",
-            "measure": measure,
-        }
-        parts = parcellation_type.split("_")
-        entities["desc"] = "".join([parts[0], parts[1].capitalize()])
-        return self.data_grabber.build_path(parcellation_image, entities)
+        return PARCELLATION_CORTICAL_STATISTICS_CMD.format(
+            input_dir=source_file.parent,
+            subject_id=source_file.name,
+            hemi=hemi,
+            parcellation_scheme=parcellation_scheme,
+            lut=parcellation_lut,
+        )
+
+    def configure_subcortex_parcellation_command(
+        self,
+        source_file: Union[str, Path],
+        parcellation_scheme: str,
+    ) -> str:
+        """
+        Configure the command for subcortical parcellation of
+        *parcellation_scheme* in *source_file*'s native space.
+
+        Parameters
+        ----------
+        source_file : Union[str,Path]
+            Path to a file used as source for Freesurfer's pipeline.
+        parcellation_scheme : str
+            Parcellation scheme to parcellate by
+        hemi : str
+            Hemisphere to be parcellated.
+
+        Returns
+        -------
+        str
+            A string representing the command to be executed.
+        """
+        source_file = Path(source_file)
+        parcellation_lut = self.validate_parcellation(
+            parcellation_scheme, "gcs_subcortex"
+        )
+        return PARCELLATION_SUBCORTICAL_STATISTICS_CMD.format(
+            input_dir=source_file.parent,
+            subject_id=source_file.name,
+            parcellation_scheme=parcellation_scheme,
+            gca=parcellation_lut,
+        )
 
     def parcellate_single_tensor(
         self,

@@ -97,7 +97,7 @@ class NativeRegistration(FreesurferManager):
         parcellation_scheme: str,
         hemi: str,
         seed: int = 42,
-    ):
+    ) -> str:
         """
         Configure the command for cortex mapping of *parcellation_scheme* to *source_file*'s native space.
 
@@ -115,7 +115,8 @@ class NativeRegistration(FreesurferManager):
         ).get("gcs")
         if not hemi_parcellation:
             raise ValueError(
-                f"No {parcellation_scheme} parcellation scheme found for {hemi} hemisphere."
+                f"""No {parcellation_scheme} parcellation scheme found
+                for {hemi} hemisphere."""
             )
         return CORTEX_MAPPING_CMD.format(
             input_dir=source_file.parent,
@@ -146,7 +147,8 @@ class NativeRegistration(FreesurferManager):
         ).get("gcs_subcortex")
         if not subcortical_parcellation:
             raise ValueError(
-                f"No {parcellation_scheme} parcellation scheme found for the sub-cortex."
+                f"""No {parcellation_scheme} parcellation scheme found
+                for the sub-cortex."""
             )
         return SUBCORTEX_MAPPING_CMD.format(
             input_dir=source_file.parent,
@@ -228,7 +230,8 @@ class NativeRegistration(FreesurferManager):
             and corresponding natice parcellations as keys.
         """
         logging.info(
-            f"Registering {parcellation_scheme} to {source_file}'s native space."
+            f"""Registering {parcellation_scheme}
+            to {source_file}'s native space."""
         )
         outputs = {}
         hemispheres = hemi or self.HEMISPHERES_LABELS + self.SUBCORTICAL_LABELS
