@@ -25,7 +25,10 @@ version = release = '0.0.0'
 pygments_style = 'trac'
 templates_path = ['.']
 extlinks = {
-    'issue': ('https://github.com/GalBenZvi/freesurfer_analyses/issues/%s', '#'),
+    'issue': (
+        'https://github.com/GalBenZvi/freesurfer_analyses/issues/%s',
+        '#',
+    ),
     'pr': ('https://github.com/GalBenZvi/freesurfer_analyses/pull/%s', 'PR #'),
 }
 # on_rtd is whether we are on readthedocs.org
