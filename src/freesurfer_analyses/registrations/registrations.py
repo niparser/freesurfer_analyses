@@ -125,7 +125,7 @@ class NativeRegistration(FreesurferManager):
             parcellation_gcs=hemi_parcellation.format(hemi=hemi),
             parcellation_scheme=parcellation_scheme,
             seed=seed,
-        )
+        ).replace("\n", " ")
 
     def configure_subcortex_mapping_command(
         self,
@@ -155,7 +155,7 @@ class NativeRegistration(FreesurferManager):
             subject_id=source_file.name,
             parcellation_gca=subcortical_parcellation,
             parcellation_scheme=parcellation_scheme,
-        )
+        ).replace("\n", " ")
 
     def run_single_hemisphere(
         self,
