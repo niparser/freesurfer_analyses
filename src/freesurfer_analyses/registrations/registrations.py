@@ -7,11 +7,6 @@ from pathlib import Path
 from typing import Tuple
 from typing import Union
 
-import nibabel as nib
-from brain_parts.parcellation.parcellations import (
-    Parcellation as parcellation_manager,
-)
-from nipype.interfaces.base import TraitError
 from tqdm import tqdm
 
 from freesurfer_analyses.manager import FreesurferManager
@@ -27,17 +22,12 @@ class NativeRegistration(FreesurferManager):
     DEFAULT_SUBCORTICAL_OUTPUT_DESTINATION = "mri"
     DEFAULT_SUBCORTICAL_OUTPUT_PATTERN = "{parcellation_scheme}_subcortex.mgz"
 
-    #: Hemispheres
-    HEMISPHERES_LABELS = ["lh", "rh"]
-    SUBCORTICAL_LABELS = ["subcortex"]
-
     def __init__(
         self,
         base_dir: Path,
         participant_labels: Union[str, list] = None,
     ) -> None:
         super().__init__(base_dir, participant_labels)
-        self.parcellation_manager = parcellation_manager()
 
     def get_participant_label_and_session(
         self, source_file: str
@@ -106,6 +96,7 @@ class NativeRegistration(FreesurferManager):
         source_file: Union[str, Path],
         parcellation_scheme: str,
         hemi: str,
+        seed: int = 42,
     ):
         """
         Configure the command for cortex mapping of *parcellation_scheme* to *source_file*'s native space.
@@ -132,6 +123,7 @@ class NativeRegistration(FreesurferManager):
             hemi=hemi,
             parcellation_gcs=hemi_parcellation.format(hemi=hemi),
             parcellation_scheme=parcellation_scheme,
+            seed=seed,
         )
 
     def configure_subcortex_mapping_command(
@@ -214,8 +206,7 @@ class NativeRegistration(FreesurferManager):
         self,
         source_file: Union[str, Path],
         parcellation_scheme: str,
-        hemi: str = None,
-        run_subcortex: bool = True,
+        hemi: Union[str, list] = None,
         force: str = False,
     ):
         """
@@ -227,7 +218,7 @@ class NativeRegistration(FreesurferManager):
             A string representing existing key within *self.parcellation_manager.parcellations*. # noqa
         source_file : Union[str,Path]
             Path to a file used as source for Freesurfer's pipeline.
-        hemi : str, optional
+        hemi : Union[str, list], optional
             Hemisphere to be parcellated, by default None
 
         Returns
@@ -256,11 +247,10 @@ class NativeRegistration(FreesurferManager):
         participant_label: str,
         session: Union[str, list] = None,
         hemi: str = None,
-        run_subcortex: bool = True,
         force: bool = False,
     ) -> dict:
         """
-
+        Register *parcellation_scheme* to *participant_label*'s native space.
 
         Parameters
         ----------
@@ -282,9 +272,7 @@ class NativeRegistration(FreesurferManager):
             and corresponding natice parcellations as keys.
         """
         outputs = {}
-        sessions = self.subjects.get(participant_label) or session
-        if isinstance(sessions, str):
-            sessions = [sessions]
+        sessions = self.validate_session(participant_label, session)
         for session in sessions:
             outputs[session] = {}
             source_files = self.subjects.get(participant_label).get(session)
@@ -293,7 +281,6 @@ class NativeRegistration(FreesurferManager):
                     source_file,
                     parcellation_scheme,
                     hemi=hemi,
-                    run_subcortex=run_subcortex,
                     force=force,
                 )
         return outputs
@@ -303,7 +290,6 @@ class NativeRegistration(FreesurferManager):
         parcellation_scheme: str,
         participant_label: Union[str, list] = None,
         hemi: str = None,
-        run_subcortex: bool = True,
         force: bool = False,
     ):
         native_parcellations = {}
@@ -319,7 +305,6 @@ class NativeRegistration(FreesurferManager):
                 parcellation_scheme,
                 participant_label,
                 hemi=hemi,
-                run_subcortex=run_subcortex,
                 force=force,
             )
         return native_parcellations

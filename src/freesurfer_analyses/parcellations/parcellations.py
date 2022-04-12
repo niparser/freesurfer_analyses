@@ -1,6 +1,8 @@
 """
 Definition of the :class:`NativeParcellation` class.
 """
+import os
+
 # import warnings
 from pathlib import Path
 from typing import Callable
@@ -8,17 +10,20 @@ from typing import Union
 
 import numpy as np
 import pandas as pd
-from brain_parts.parcellation.parcellations import (
-    Parcellation as parcellation_manager,
-)
 from tqdm import tqdm
 
-from dmriprep_analyses.manager import DmriprepManager
-from dmriprep_analyses.registrations.registrations import NativeRegistration
-from dmriprep_analyses.tensors.tensor_estimation_mrtrix import TensorEstimation
+from freesurfer_analyses.manager import FreesurferManager
+from freesurfer_analyses.parcellations.utils import PARCALLATION_STATISTICS_CMD
+from freesurfer_analyses.registrations.registrations import NativeRegistration
 
 
-class NativeParcellation(DmriprepManager):
+class NativeParcellation(FreesurferManager):
+    #: Outputs
+    DEFAULT_CORTICAL_OUTPUT_DESTINATION = "stats"
+    DEFAULT_CORTICAL_OUTPUT_PATTERN = "{hemi}.{parcellation_scheme}.stats"
+
+    DEFAULT_SUBCORTICAL_OUTPUT_DESTINATION = "mri"
+    DEFAULT_SUBCORTICAL_OUTPUT_PATTERN = "{parcellation_scheme}_subcortex.mgz"
     def __init__(
         self,
         base_dir: Path,
@@ -28,35 +33,17 @@ class NativeParcellation(DmriprepManager):
         self.registration_manager = NativeRegistration(
             base_dir, participant_labels
         )
-        self.parcellation_manager = parcellation_manager()
-        self.tensor_estimation = TensorEstimation(base_dir, participant_labels)
 
-    def validate_session(
-        self, participant_label: str, session: Union[str, list] = None
-    ) -> list:
+    def set_subjects_dir(self, subjects_dir: Path) -> None:
         """
-        Validates session's input type (must be list)
+        Set the enviorment variable SUBJECTS_DIR
 
         Parameters
         ----------
-        participant_label : str
-            Specific participants' labels
-        session : Union[str, list], optional
-            Specific session(s)' labels, by default None
-
-        Returns
-        -------
-        list
-            Either specified or available session(s)' labels
+        subjects_dir : Path
+            Path to the subjects' directory
         """
-        if session:
-            if isinstance(session, str):
-                sessions = [session]
-            elif isinstance(session, list):
-                sessions = session
-        else:
-            sessions = self.subjects.get(participant_label)
-        return sessions
+        os.environ["SUBJECTS_DIR"] = str(subjects_dir)
 
     def generate_rows(
         self,
