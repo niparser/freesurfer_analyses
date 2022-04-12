@@ -1,10 +1,35 @@
 [build-system]
 requires = [
-    "setuptools>=30.3.0",
+    "setuptools>=42", "wheel",
     "wheel",
 ]
+build-backend = "setuptools.build_meta"
 
 [tool.black]
 line-length = 79
-target-version = ['py36']
+exclude = '''
+# Directories
+/(
+    \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | venv
+  | _build
+  | build
+  | dist
+)/
+'''
+target-version = ['py38']
 skip-string-normalization = true
+
+[tool.coverage.run]
+source = ["dicom_parser"]
+branch = true
+omit = ["*tests*", "venv/**", "setup.py"]
+command_line = "-m pytest tests"
+
+[tool.coverage.paths]
+source = ["src"]
