@@ -13,7 +13,8 @@ import pandas as pd
 from tqdm import tqdm
 
 from freesurfer_analyses.manager import FreesurferManager
-from freesurfer_analyses.parcellations.utils import PARCALLATION_STATISTICS_CMD
+
+# from freesurfer_analyses.parcellations.utils import PARCALLATION_STATISTICS_CMD # noqa
 from freesurfer_analyses.registrations.registrations import NativeRegistration
 
 
@@ -24,6 +25,7 @@ class NativeParcellation(FreesurferManager):
 
     DEFAULT_SUBCORTICAL_OUTPUT_DESTINATION = "mri"
     DEFAULT_SUBCORTICAL_OUTPUT_PATTERN = "{parcellation_scheme}_subcortex.mgz"
+
     def __init__(
         self,
         base_dir: Path,
