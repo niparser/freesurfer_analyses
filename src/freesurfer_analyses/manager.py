@@ -1,5 +1,6 @@
 import datetime
 import logging
+import os
 from pathlib import Path
 from typing import Union
 
@@ -55,6 +56,49 @@ class FreesurferManager:
             **LOGGER_CONFIG,
         )
 
+    def set_subjects_dir(self, subjects_dir: Path) -> None:
+        """
+        Set the enviorment variable SUBJECTS_DIR
+
+        Parameters
+        ----------
+        subjects_dir : Path
+            Path to the subjects' directory
+        """
+        os.environ["SUBJECTS_DIR"] = str(subjects_dir)
+
+    def validate_parcellation(
+        self, parcellation_scheme: str, key: str
+    ) -> Path:
+        """
+        Validate that *parcellation scheme* has a valid *key*.
+
+        Parameters
+        ----------
+        parcellation_scheme : str
+            Parcellation scheme to be validated.
+        key : str
+            Key to be validated.
+
+        Returns
+        -------
+        Path
+            Path to the parcellation scheme.
+
+        Raises
+        ------
+        ValueError
+            If *parcellation scheme* has no *key*.
+        """
+        parcellation_key = self.parcellation_manager.parcellations.get(
+            parcellation_scheme
+        ).get(key)
+        if not parcellation_key:
+            raise ValueError(
+                f"No available {key} was found for {parcellation_scheme}."
+            )
+        return Path(parcellation_key)
+
     def validate_session(
         self, participant_label: str, session: Union[str, list] = None
     ) -> list:
@@ -81,6 +125,29 @@ class FreesurferManager:
         else:
             sessions = self.subjects.get(participant_label)
         return sessions
+
+    def validate_participant_label(self, participant_label: str) -> list:
+        """
+        Validates participant's label.
+
+        Parameters
+        ----------
+        participant_label : str
+            Specific participant's label
+
+        Returns
+        -------
+        list
+            Either specified or available participant's labels
+        """
+        if participant_label:
+            if isinstance(participant_label, str):
+                participant_labels = [participant_label]
+            elif isinstance(participant_label, list):
+                participant_labels = participant_label
+        else:
+            participant_labels = list(sorted(self.subjects.keys()))
+        return participant_labels
 
     def build_output_dictionary(
         self,

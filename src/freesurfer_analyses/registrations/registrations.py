@@ -14,7 +14,7 @@ from freesurfer_analyses.registrations.utils import CORTEX_MAPPING_CMD
 from freesurfer_analyses.registrations.utils import SUBCORTEX_MAPPING_CMD
 
 
-class NativeRegistration(FreesurferManager):
+class RegistrationManager(FreesurferManager):
     #: Outputs
     DEFAULT_CORTICAL_OUTPUT_DESTINATION = "label"
     DEFAULT_CORTICAL_OUTPUT_PATTERN = "{hemi}.{parcellation_scheme}.annot"
@@ -271,8 +271,9 @@ class NativeRegistration(FreesurferManager):
         Returns
         -------
         dict
-            A dictionary with keys of "anat" and available or requested sessions,
-            and corresponding natice parcellations as keys.
+            A dictionary with keys of available or requested sessions,
+            their corresponding source files,
+            and paths native parcellations as values.
         """
         outputs = {}
         sessions = self.validate_session(participant_label, session)
@@ -296,13 +297,7 @@ class NativeRegistration(FreesurferManager):
         force: bool = False,
     ):
         native_parcellations = {}
-        if participant_label:
-            if isinstance(participant_label, str):
-                participant_labels = [participant_label]
-            elif isinstance(participant_label, list):
-                participant_labels = participant_label
-        else:
-            participant_labels = list(sorted(self.subjects.keys()))
+        participant_labels = self.validate_participant_label(participant_label)
         for participant_label in tqdm(participant_labels):
             native_parcellations[participant_label] = self.run_single_subject(
                 parcellation_scheme,
