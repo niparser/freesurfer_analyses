@@ -9,8 +9,8 @@ def apply_bids_filters(
     bids_filters: dict = {},
 ) -> list:
     """
-    Iterates over directories under *base_dir* that represent names of inputs to *recon-all* processing pipeline,
-    to locate those that match *bids_filters*
+    Iterates over directories under *base_dir* that represent names of inputs
+    to *recon-all* pipeline, to locate those that match *bids_filters*
 
     Parameters
     ----------
