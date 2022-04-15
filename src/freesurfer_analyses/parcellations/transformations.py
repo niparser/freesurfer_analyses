@@ -57,34 +57,6 @@ class TransformationManager(FreesurferManager):
             base_dir, participant_labels
         )
 
-    def generate_rows(
-        self,
-        participant_label: str,
-        session: Union[str, list],
-        tensor_type: str,
-    ) -> pd.MultiIndex:
-        """
-        Generate target DataFrame's multiindex for participant's rows.
-
-        Parameters
-        ----------
-        participant_label : str
-            Specific participants' labels
-        session : Union[str, list]
-            Specific session(s)' labels
-
-        Returns
-        -------
-        pd.MultiIndex
-            A MultiIndex comprised of participant's label
-            and its corresponding sessions.
-        """
-        sessions = self.validate_session(participant_label, session)
-        metrics = self.tensor_estimation.METRICS.get(tensor_type)
-        return pd.MultiIndex.from_product(
-            [[participant_label], sessions, metrics]
-        )
-
     def build_output_dictionary(
         self,
         source_file: str,

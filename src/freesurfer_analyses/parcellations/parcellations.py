@@ -26,7 +26,7 @@ class ParcellationManager(FreesurferManager):
     DEFAULT_CORTICAL_STATS_PATTERN = "{hemi}.{parcellation_scheme}.stats"
 
     DEFAULT_SUBCORTICAL_STATS_DESTINATION = "stats"
-    DEFAULT_SUBCORTICAL_STATS_PATTERN = "{parcellation_scheme}_subcortex.stats"
+    DEFAULT_SUBCORTICAL_STATS_PATTERN = "subcortex.{parcellation_scheme}.stats"
 
     def __init__(
         self,
