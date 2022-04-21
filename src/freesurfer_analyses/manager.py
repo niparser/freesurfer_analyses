@@ -67,6 +67,25 @@ class FreesurferManager:
         """
         os.environ["SUBJECTS_DIR"] = str(subjects_dir)
 
+    def parse_source_file(self, source_file: Union[Path, str]):
+        """
+        Parses the source file to extract the subject's label and session's
+        label.
+
+        Parameters
+        ----------
+        source_file : Union[Path,str]
+            Path to a file used as source for Freesurfer's pipeline.
+
+        Returns
+        -------
+        Tuple[str,str]
+            A tuple with the subject's label and session's label.
+        """
+        source_file = Path(source_file)
+        participant_label, session = source_file.name.split("_")[:2]
+        return participant_label, session, source_file.name
+
     def validate_parcellation(
         self, parcellation_scheme: str, key: str
     ) -> Path:

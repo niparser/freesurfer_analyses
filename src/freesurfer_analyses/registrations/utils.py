@@ -1,10 +1,9 @@
 # Cortex mapping
-CORTEX_MAPPING_CMD = """mris_ca_label -seed {seed}
--sdir {input_dir}
+CORTEX_MAPPING_CMD = """mris_ca_label -seed {seed} -sdir {input_dir}
 -l {input_dir}/{subject_id}/label/{hemi}.cortex.label
 {subject_id} {hemi}
 {input_dir}/{subject_id}/surf/{hemi}.sphere.reg
-{parcellation_gcs} -seed 42
+{parcellation_gcs}
 {input_dir}/{subject_id}/label/{hemi}.{parcellation_scheme}.annot"""
 
 # Subcortex mapping
